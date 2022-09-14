@@ -1,7 +1,19 @@
+**/.idea/
+*.swp
+*.swo
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+
+# yo1k's ignore list
+bot-venv*/
+harness-util/
+activate-venv.sh
+.editorconfig
+.mypy.ini
+
 
 # C extensions
 *.so
@@ -144,9 +156,3 @@ dmypy.json
 .history/
 
 .mypy_cache
-
-# папки со статикой и медиа
-static/
-posts/static/
-media/
-

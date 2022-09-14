@@ -1,0 +1,5 @@
+# Create in the root of the project file `.env` with next variables:
+
+PRACTICUM_TOKEN=<put here your practicum token>
+TELEGRAM_TOKEN=<put here your telegram token>
+TELEGRAM_CHAT_ID=<put here your telegram chat id>
