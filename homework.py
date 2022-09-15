@@ -2,9 +2,8 @@ from __future__ import annotations
 import os
 import sys
 import time
-from pprint import pprint
+import logging
 from typing import Optional, Any
-import urllib.request
 
 import telegram
 from dotenv import load_dotenv
@@ -19,13 +18,13 @@ PRACTICUM_TOKEN: Optional[str] = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN: Optional[str] = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID: Optional[str] = os.getenv('TELEGRAM_CHAT_ID')
 
-RETRY_TIME: int = 10 # SKTODO set value 600
 ENDPOINT: str = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS: dict[str, str] = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
+RETRY_TIME: int = 10 # SKTODO set value 600
 
 # Keys of the response of the ENDPOINT API:
-HOMEWORKS: str = 'homeworks'
 CURRENT_DATE: str = 'current_date'
+HOMEWORKS: str = 'homeworks'
 # Keys in an element in `HOMEWORKS` array:
 HOMEWORK_NAME: str = 'homework_name'
 STATUS: str = 'status'
@@ -37,12 +36,20 @@ HOMEWORK_STATUSES: dict[str, str] = {
 }
 
 
+class PracticumAPIError(Exception):
+    pass
+
+
 class UnsetEnvVarException(Exception):
     pass
 
 
-class PracticumAPIError(Exception):
-    pass
+handlers = (logging.StreamHandler(stream=sys.stdout), )
+logging.basicConfig(
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        level=logging.DEBUG,
+        handlers=handlers
+)
 
 
 def send_message(bot: Bot, message: str) -> None:
@@ -103,26 +110,31 @@ def check_tokens() -> bool:
     """
     Checks for the presence of all required variables from the environment.
     """
-    if (
-            PRACTICUM_TOKEN
-            and TELEGRAM_TOKEN
-            and TELEGRAM_CHAT_ID
-    ):
-        return True
-    else:
-        return False
+    tokens = {
+            'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
+            'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
+            'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
+    }
+    for name, token in tokens.items():
+        if not token:
+            logging.critical(
+                    f'Отсутствует обязательная переменная окружения `{name}`'
+            )
+            return False
+    return True
 
 
 def main() -> None:
     """Основная логика работы бота."""
 
     if not check_tokens():
-        raise UnsetEnvVarException('Not all environment variables are set')
+        sys.exit(0)
+        # raise UnsetEnvVarException('Not all environment variables are set')
 
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    current_timestamp = 1 #int(time.time())
+    current_timestamp = int(time.time())
 
-    message_cache: Optional[str] = None
+    cached_message: Optional[str] = None
     message: Optional[str] = None
     while True:
         try:
@@ -133,22 +145,26 @@ def main() -> None:
             if homeworks:
                 message = parse_status(homeworks[0])
 
-            if message != message_cache:
+            if message != cached_message:
                 send_message(bot=bot, message=message)
+                logging.info(f'Send message {message}')
             time.sleep(RETRY_TIME)
-
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
+            logging.error(f'{message}')
+
             if not isinstance(error, telegram.error.TelegramError):
                 try:
-                    if message != message_cache:
+                    if message != cached_message:
                         send_message(bot=bot, message=message)
+                        logging.info(f'Send message {message}')
                 except Exception as error:
-                    raise type(error)(f'Сбой в работе программы: {error}')
+                    logging.error(f'Сбой в работе программы: {error}')
+
             time.sleep(RETRY_TIME)
         else:
-            pass # SKTODO logging INFO: send message
-        message_cache = message
+            logging.debug(f'Send message {message}')
+        cached_message = message
 
 
 if __name__ == '__main__':
