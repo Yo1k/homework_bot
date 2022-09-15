@@ -1,18 +1,36 @@
 from __future__ import annotations
+
+import logging
 import os
 import sys
 import time
-import logging
-from typing import Optional, Any
+from http import HTTPStatus
+from typing import Any, Dict, Optional, TypeVar
 
+import requests
 import telegram
 from dotenv import load_dotenv
-import requests
 from telegram import Bot
+
+from exceptions import PracticumAPIError
 
 load_dotenv()
 
-JSONType = dict[str, Any] # SKTODO use TypedDict
+JSONType = Dict[str, Any]
+T = TypeVar('T')
+
+
+def cast_away_optional(arg: Optional[T]) -> T:
+    """Allows cast away optional type `None` from `arg`."""
+    assert arg is not None
+    return arg
+
+
+def cast_int_type(arg: Any) -> int:
+    """Casts type `int` for `arg`."""
+    assert isinstance(arg, int)
+    return arg
+
 
 PRACTICUM_TOKEN: Optional[str] = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN: Optional[str] = os.getenv('TELEGRAM_TOKEN')
@@ -20,7 +38,7 @@ TELEGRAM_CHAT_ID: Optional[str] = os.getenv('TELEGRAM_CHAT_ID')
 
 ENDPOINT: str = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS: dict[str, str] = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
-RETRY_TIME: int = 10 # SKTODO set value 600
+RETRY_TIME: int = 600
 
 # Keys of the response of the ENDPOINT API:
 CURRENT_DATE: str = 'current_date'
@@ -36,45 +54,40 @@ HOMEWORK_STATUSES: dict[str, str] = {
 }
 
 
-class PracticumAPIError(Exception):
-    pass
-
-
-class UnsetEnvVarException(Exception):
-    pass
-
-
 handlers = (logging.StreamHandler(stream=sys.stdout), )
 logging.basicConfig(
-        format='%(asctime)s [%(levelname)s] %(message)s',
-        level=logging.DEBUG,
-        handlers=handlers
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    level=logging.DEBUG,
+    handlers=handlers
 )
 
 
 def send_message(bot: Bot, message: str) -> None:
+    """Sends message from a telegram bot to a telegram chat."""
     bot.send_message(
-            chat_id=TELEGRAM_CHAT_ID,
-            text=message
+        chat_id=TELEGRAM_CHAT_ID,
+        text=message
     )
 
 
-# SKTODO current_timestamp Optional or float?
 def get_api_answer(current_timestamp: Optional[float] = None) -> JSONType:
+    """Gets json response from the API and transforms it to python types."""
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
 
     response = requests.get(
-            url=ENDPOINT,
-            headers=HEADERS,
-            params=params
+        url=ENDPOINT,
+        headers=HEADERS,
+        params=params
     )
-    response.raise_for_status()
+    if response.status_code != HTTPStatus.OK:
+        response.raise_for_status()
     info: JSONType = response.json()
     return info
 
 
 def check_response(response: JSONType) -> list[JSONType]:
+    """Validates the structure of the response from the API."""
     try:
         homeworks: list[JSONType] = response[HOMEWORKS]
         _ = response[CURRENT_DATE]
@@ -87,51 +100,48 @@ def check_response(response: JSONType) -> list[JSONType]:
         return homeworks
     else:
         raise PracticumAPIError(
-                f'{type(homeworks)} is not `list` type value'
+            f'{type(homeworks)} is not `list` type value'
         )
 
 
 def parse_status(homework: JSONType) -> str:
+    """Returns message about a homework review status."""
     try:
         homework_name = homework[HOMEWORK_NAME]
         homework_status = homework[STATUS]
     except KeyError as e:
-        raise PracticumAPIError(f'There is no {e} key in API response')
+        raise type(e)(f'There is no {e} key in the API response')
 
     try:
         verdict = HOMEWORK_STATUSES[homework_status]
     except KeyError as e:
-        raise PracticumAPIError(f'There is no {e} in {HOMEWORK_STATUSES}')
+        raise type(e)(f'There is no {e} in {HOMEWORK_STATUSES}')
 
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens() -> bool:
-    """
-    Checks for the presence of all required variables from the environment.
-    """
+    """Checks for presence of all required variables from the environment."""
     tokens = {
-            'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
-            'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
-            'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
+        'PRACTICUM_TOKEN': PRACTICUM_TOKEN,
+        'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
+        'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
     }
     for name, token in tokens.items():
         if not token:
             logging.critical(
-                    f'Отсутствует обязательная переменная окружения `{name}`'
+                f'Missing required environment variable `{name}`'
             )
             return False
     return True
 
 
-def main() -> None:
-    """Основная логика работы бота."""
-
+def main() -> None:  # noqa: C901
+    """Main logic of bot working."""
     if not check_tokens():
         sys.exit(0)
-        # raise UnsetEnvVarException('Not all environment variables are set')
 
-    bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    bot = telegram.Bot(token=cast_away_optional(TELEGRAM_TOKEN))
     current_timestamp = int(time.time())
 
     cached_message: Optional[str] = None
@@ -139,18 +149,18 @@ def main() -> None:
     while True:
         try:
             response = get_api_answer(current_timestamp=current_timestamp)
-            current_timestamp = response.get(CURRENT_DATE)
+            current_timestamp = cast_int_type(response.get(CURRENT_DATE))
             homeworks = check_response(response)
 
             if homeworks:
                 message = parse_status(homeworks[0])
 
-            if message != cached_message:
-                send_message(bot=bot, message=message)
+            if message and message != cached_message:
+                send_message(bot=bot, message=cast_away_optional(message))
                 logging.info(f'Send message {message}')
             time.sleep(RETRY_TIME)
         except Exception as error:
-            message = f'Сбой в работе программы: {error}'
+            message = f'Problem with the program: {error}'
             logging.error(f'{message}')
 
             if not isinstance(error, telegram.error.TelegramError):
@@ -159,11 +169,11 @@ def main() -> None:
                         send_message(bot=bot, message=message)
                         logging.info(f'Send message {message}')
                 except Exception as error:
-                    logging.error(f'Сбой в работе программы: {error}')
+                    logging.error(f'Problem with the program:: {error}')
 
             time.sleep(RETRY_TIME)
         else:
-            logging.debug(f'Send message {message}')
+            logging.debug(f'Current `message` is "{message}"')
         cached_message = message
 
 
