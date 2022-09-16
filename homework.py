@@ -54,20 +54,27 @@ HOMEWORK_STATUSES: dict[str, str] = {
 }
 
 
-handlers = (logging.StreamHandler(stream=sys.stdout), )
-logging.basicConfig(
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    level=logging.DEBUG,
-    handlers=handlers
-)
+def set_logger() -> None:
+    """Set configuration of the root logger."""
+    handlers = (logging.StreamHandler(stream=sys.stdout), )
+    logging.basicConfig(
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        level=logging.DEBUG,
+        handlers=handlers
+    )
 
 
 def send_message(bot: Bot, message: str) -> None:
     """Sends message from a telegram bot to a telegram chat."""
-    bot.send_message(
-        chat_id=TELEGRAM_CHAT_ID,
-        text=message
-    )
+    try:
+        bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=message
+        )
+    except telegram.error.TelegramError as e:
+        logging.error(f'Problem with the program: {e}')
+    else:
+        logging.info(f'Send message {message}')
 
 
 def get_api_answer(current_timestamp: Optional[float] = None) -> JSONType:
@@ -92,7 +99,7 @@ def check_response(response: JSONType) -> list[JSONType]:
         homeworks: list[JSONType] = response[HOMEWORKS]
         _ = response[CURRENT_DATE]
     except TypeError as e:
-        raise type(e)(f'{e} - "{response}" is not a {JSONType} type')
+        raise TypeError(f'{e} - "{response}" is not a {JSONType} type')
     except KeyError as e:
         raise PracticumAPIError(f'There is no "{e}" key in API response')
 
@@ -136,7 +143,7 @@ def check_tokens() -> bool:
     return True
 
 
-def main() -> None:  # noqa: C901
+def main() -> None:
     """Main logic of bot working."""
     if not check_tokens():
         sys.exit(0)
@@ -155,27 +162,23 @@ def main() -> None:  # noqa: C901
             if homeworks:
                 message = parse_status(homeworks[0])
 
-            if message and message != cached_message:
+            if message != cached_message:
                 send_message(bot=bot, message=cast_away_optional(message))
-                logging.info(f'Send message {message}')
-            time.sleep(RETRY_TIME)
+
         except Exception as error:
             message = f'Problem with the program: {error}'
             logging.error(f'{message}')
 
-            if not isinstance(error, telegram.error.TelegramError):
-                try:
-                    if message != cached_message:
-                        send_message(bot=bot, message=message)
-                        logging.info(f'Send message {message}')
-                except Exception as error:
-                    logging.error(f'Problem with the program:: {error}')
+            if message != cached_message:
+                send_message(bot=bot, message=message)
 
-            time.sleep(RETRY_TIME)
         else:
             logging.debug(f'Current `message` is "{message}"')
+
         cached_message = message
+        time.sleep(RETRY_TIME)
 
 
 if __name__ == '__main__':
+    set_logger()
     main()

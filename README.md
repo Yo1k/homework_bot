@@ -21,4 +21,22 @@ alt="Python requirement">
 <img src="https://img.shields.io/badge/pytest-6.2-E4D00A.svg?labelColor=555">
 </a>
 
-Python telegram bot
+## About
+
+A service that notifies about your homework status in 
+[YandexPracticum](https://yandex.ru/support/praktikum/) 
+using YandexPracticum.Homework API: 
+* polls the service API and checks the status of the submitted homework;
+* sends notifications to your Telegram using Telegram bot in case of 
+  homework status update;
+* logs its work and informs you about important problems with a message in 
+  Telegram.
+
+Tech stack: \
+[python-telegram-bot](https://docs.python-telegram-bot.org/en/v13.7/),
+[requests](https://requests.readthedocs.io/en/stable/)
+
+## Application
+
+Before running the main `homework.py` script, create a `.env` file and set the
+secrete keys. Use the `example_env` file as an example.
